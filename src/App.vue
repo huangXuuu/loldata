@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import GetAllDataView from './views/GetAllDataView.vue'
 import GetNewAllDataView from './views/GetNewAllDataView.vue'
 import TeamAffinityView from './views/TeamAffinityView.vue'
@@ -11,6 +11,22 @@ const tabs = [
 ] as const
 
 const active = ref<(typeof tabs)[number]['key']>('all')
+
+const authorProfile = ref<ToyAuthorProfile | null>(null)
+
+onMounted(async () => {
+  try {
+    if (!window.toy) return
+    const supported = await window.toy.isSupport('getAuthorProfile')
+    if (!supported) return
+    const result = await window.toy.getAuthorProfile()
+    if (result.status === 'ok' && result.data) {
+      authorProfile.value = result.data
+    }
+  } catch (err) {
+    console.error('[ToySDK] getAuthorProfile failed', err)
+  }
+})
 </script>
 
 <template>
@@ -30,4 +46,9 @@ const active = ref<(typeof tabs)[number]['key']>('all')
   </div>
 
   <component :is="tabs.find((t) => t.key === active)!.component" />
+
+  <footer v-if="authorProfile" class="author-credit">
+    <img v-if="authorProfile.avatar" :src="authorProfile.avatar" alt="" class="author-avatar" />
+    <span>作者：{{ authorProfile.nickname }}</span>
+  </footer>
 </template>
