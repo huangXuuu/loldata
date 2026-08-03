@@ -1,10 +1,13 @@
 // Vercel serverless function: CORS-forwarding proxy for open.tjstats.com.
 //
-// Same purpose as cloudflare-worker/tjstats-proxy.js, but deployed on Vercel
-// instead of Cloudflare — tjstats' gateway appears to hard-block Cloudflare's
-// edge IP ranges at the TLS layer (HTTP 525), so this tries a different
-// network path. Deployed separately from the main app; only used as the
-// production API_BASE_URL target.
+// Routed here for every path via vercel.json rewrites (not file-system
+// dynamic routing — [...all].js catch-all routes only matched a single path
+// segment in this project for reasons that weren't worth chasing further;
+// vercel.json rewrites are a separate, more predictable mechanism).
+//
+// req.url reflects the *original* request path (e.g.
+// /match-auth-app/open/v1/schedule/stage?seasonId=237), which we forward to
+// open.tjstats.com as-is.
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -22,13 +25,12 @@ export default async function handler(req, res) {
     return
   }
 
-  const targetPath = req.url.replace(/^\/api/, '')
-  if (!targetPath.startsWith('/match-auth-app/')) {
+  if (!req.url.startsWith('/match-auth-app/')) {
     res.status(404).send('Not found')
     return
   }
 
-  const targetUrl = 'https://open.tjstats.com' + targetPath
+  const targetUrl = 'https://open.tjstats.com' + req.url
 
   try {
     const upstreamHeaders = {}
