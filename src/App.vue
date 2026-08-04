@@ -13,7 +13,7 @@ const tabs = [
 const active = ref<(typeof tabs)[number]['key']>('all')
 
 const AUTHOR_MID = '523253490'
-const PROMO_BVID = 'BV1B83d6JEQ4'
+const PROMO_BVID = 'BV1a8uA6XEeT'
 
 const authorProfile = ref<ToyAuthorProfile | null>(null)
 const navigateSupported = ref(false)
