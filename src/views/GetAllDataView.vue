@@ -631,22 +631,25 @@ const pagedRows = computed(() => {
     <h2>获取全部数据</h2>
     <p class="desc">先「获取数据」拉取选手 / 英雄 / 队伍 / 选手英雄数据并在下方查看，确认无误后再「导出 Excel」下载完整版与精简版。</p>
 
-    <div class="field-grid">
-      <div class="field">
-        <label>API 密钥 (Authorization)</label>
-        <input v-model="apiKey" type="text" />
-      </div>
-      <div class="field">
-        <label>过滤时间(可选)</label>
-        <div class="input-with-clear">
-          <input v-model="filterDate" type="datetime-local" />
-          <button v-if="filterDate" type="button" class="clear-btn" title="清除过滤时间" @click="filterDate = ''">×</button>
+    <details class="advanced-fields">
+      <summary>高级</summary>
+      <div class="field-grid">
+        <div class="field">
+          <label>API 密钥 (Authorization)</label>
+          <input v-model="apiKey" type="text" />
         </div>
-        <p class="hint">
-          仅对「选手英雄数据」生效：只保留此时间之后的英雄选取记录。接口不提供逐条记录的版本号，如果想按版本筛选，可以把这里设成目标版本的上线日期作为近似替代。
-        </p>
+        <div class="field">
+          <label>过滤时间(可选)</label>
+          <div class="input-with-clear">
+            <input v-model="filterDate" type="datetime-local" />
+            <button v-if="filterDate" type="button" class="clear-btn" title="清除过滤时间" @click="filterDate = ''">×</button>
+          </div>
+          <p class="hint">
+            仅对「选手英雄数据」生效：只保留此时间之后的英雄选取记录。接口不提供逐条记录的版本号，如果想按版本筛选，可以把这里设成目标版本的上线日期作为近似替代。
+          </p>
+        </div>
       </div>
-    </div>
+    </details>
 
     <div class="field season-tree-wrap">
       <label>赛季与赛段</label>

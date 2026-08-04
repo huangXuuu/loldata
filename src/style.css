@@ -51,6 +51,26 @@ h1 {
   margin-bottom: 20px;
 }
 
+.promo-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.promo-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.promo-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .author-credit {
   display: flex;
   align-items: center;
@@ -116,6 +136,29 @@ h1 {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
   margin: 16px 0;
+}
+
+.advanced-fields {
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 12px;
+}
+
+.advanced-fields summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 8px 0;
+  user-select: none;
+}
+
+.advanced-fields[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.advanced-fields .field-grid {
+  margin: 12px 0;
 }
 
 .field {
