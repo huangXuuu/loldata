@@ -1,6 +1,6 @@
 export const API_BASE_URL = import.meta.env.DEV
   ? '/tjstats-api/match-auth-app/open/v1'
-  : 'https://open.tjstats.com/match-auth-app/open/v1'
+  : 'https://120-27-149-43.nip.io/match-auth-app/open/v1'
 
 export const PLAYER_POSITION_MAPPING: Record<string, string> = {
   TOP: '上单',
