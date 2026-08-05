@@ -17,6 +17,7 @@ import {
   tabFiltersReadonly,
   tabRanges,
   tabRangesReadonly,
+  type FetchedData,
 } from '../dataStore'
 import type { Row } from '../types'
 
@@ -24,6 +25,8 @@ const PAGE_SIZE = 500
 const FILTER_OPTION_LIMIT = 300
 const HIDDEN_COLUMNS_KEY = 'loldata_hidden_columns_v1'
 const FORM_STATE_KEY = 'loldata_form_state_v1'
+const FETCHED_DATA_CACHE_KEY = 'loldata_fetched_data_v1'
+const FETCHED_DATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 interface SeasonNode {
   seasonId: number
@@ -32,7 +35,6 @@ interface SeasonNode {
 }
 
 const SEASON_CACHE_KEY = 'loldata_season_tree_v2'
-const SEASON_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const PROBE_BEFORE = 20
 const PROBE_AFTER = 10
 
@@ -89,7 +91,6 @@ function readSeasonCache(): SeasonNode[] | null {
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed?.fetchedAt || !Array.isArray(parsed?.nodes)) return null
-    if (Date.now() - parsed.fetchedAt > SEASON_CACHE_TTL_MS) return null
     return parsed.nodes
   } catch {
     return null
@@ -215,6 +216,7 @@ async function applyCustomSeason() {
 onMounted(() => loadSeasonTree(false))
 
 const fetching = ref(false)
+const forceRefetch = ref(false)
 const exporting = ref(false)
 const exportMode = ref<'all' | 'filtered'>('all')
 const logs = ref<{ text: string; error?: boolean }[]>([])
@@ -223,11 +225,58 @@ function log(text: string, error = false) {
   logs.value.push({ text: `[${new Date().toLocaleTimeString()}] ${text}`, error })
 }
 
+interface FetchedDataCache {
+  apiKey: string
+  seasonId: number
+  stageIds: string
+  filterDate: string
+  fetchedAt: number
+  data: FetchedData
+}
+
+function readFetchedDataCache(): FetchedDataCache | null {
+  try {
+    const raw = localStorage.getItem(FETCHED_DATA_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.data) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeFetchedDataCache(cache: FetchedDataCache) {
+  try {
+    localStorage.setItem(FETCHED_DATA_CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // localStorage 不可用或数据过大时忽略缓存，不影响当次获取结果
+  }
+}
+
+function selectionMatchesCache(cache: FetchedDataCache): boolean {
+  return (
+    cache.apiKey === apiKey.value.trim() &&
+    cache.seasonId === Number(seasonId.value) &&
+    cache.stageIds === playerStageIds.value.trim() &&
+    cache.filterDate === filterDate.value &&
+    Date.now() - cache.fetchedAt <= FETCHED_DATA_CACHE_TTL_MS
+  )
+}
+
 async function fetchData() {
   logs.value = []
-  fetchedData.value = null
   fetching.value = true
   try {
+    const cached = readFetchedDataCache()
+    if (!forceRefetch.value && cached && selectionMatchesCache(cached)) {
+      fetchedData.value = cached.data
+      activeResultKey.value = 'player'
+      log('赛季 / 赛段选择未变化，已使用本地缓存数据（未调用接口）。')
+      return
+    }
+
+    fetchedData.value = null
     const cfg: FetchConfig = {
       apiKey: apiKey.value.trim(),
       seasonId: Number(seasonId.value),
@@ -280,6 +329,14 @@ async function fetchData() {
 
     fetchedData.value = { playerRows, heroRows, teamRows, teamGameRows, playerHeroRows, groupData }
     activeResultKey.value = 'player'
+    writeFetchedDataCache({
+      apiKey: apiKey.value.trim(),
+      seasonId: Number(seasonId.value),
+      stageIds: playerStageIds.value.trim(),
+      filterDate: filterDate.value,
+      fetchedAt: Date.now(),
+      data: fetchedData.value,
+    })
     log('数据获取完成，可在下方查看，或点击「导出 Excel」下载。')
   } catch (err) {
     console.error(err)
@@ -690,6 +747,10 @@ const pagedRows = computed(() => {
       <button class="primary" :disabled="fetching" @click="fetchData">
         {{ fetching ? '获取中...' : '获取数据' }}
       </button>
+      <label class="radio-option" title="赛季/赛段选择不变时默认使用本地缓存数据，勾选后本次强制重新调用接口">
+        <input v-model="forceRefetch" type="checkbox" />
+        忽略缓存，强制刷新
+      </label>
       <button class="primary" :disabled="!fetchedData || exporting" @click="exportData">
         {{ exporting ? '导出中...' : '导出 Excel' }}
       </button>
