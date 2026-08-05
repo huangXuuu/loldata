@@ -264,17 +264,26 @@ function selectionMatchesCache(cache: FetchedDataCache): boolean {
   )
 }
 
+/** 命中本地缓存时直接展示，不发任何请求；返回是否命中 */
+function tryUseCachedData(): boolean {
+  if (forceRefetch.value) return false
+  const cached = readFetchedDataCache()
+  if (!cached || !selectionMatchesCache(cached)) return false
+  fetchedData.value = cached.data
+  activeResultKey.value = 'player'
+  log('赛季 / 赛段选择未变化，已使用本地缓存数据（未调用接口）。')
+  return true
+}
+
+onMounted(() => {
+  tryUseCachedData()
+})
+
 async function fetchData() {
   logs.value = []
   fetching.value = true
   try {
-    const cached = readFetchedDataCache()
-    if (!forceRefetch.value && cached && selectionMatchesCache(cached)) {
-      fetchedData.value = cached.data
-      activeResultKey.value = 'player'
-      log('赛季 / 赛段选择未变化，已使用本地缓存数据（未调用接口）。')
-      return
-    }
+    if (tryUseCachedData()) return
 
     fetchedData.value = null
     const cfg: FetchConfig = {
