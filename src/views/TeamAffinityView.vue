@@ -4,12 +4,14 @@ import ExcelJS from 'exceljs'
 import { fetchedData, filteredRowsFor, parseNumeric } from '../dataStore'
 import { computeTeamAffinity, exportTeamAffinity } from '../teamAffinity'
 import { addStyledSheet, downloadWorkbook } from '../utils/excel'
+import { defaultFormState, fetchPlayerHeroRows, fetching } from '../dataFetch'
 import type { Row } from '../types'
 
 const PAGE_SIZE = 500
 const FILTER_OPTION_LIMIT = 300
 const FILTERS_KEY = 'loldata_affinity_filters_v1'
 const HIDDEN_COLUMNS_KEY = 'loldata_affinity_hidden_columns_v1'
+const SORT_KEY = 'loldata_affinity_sort_v1'
 
 interface RangeFilter {
   min: string
@@ -27,6 +29,25 @@ const affinity = computed(() => {
 
 const columns = computed(() => affinity.value?.columns ?? [])
 const rows = computed(() => affinity.value?.rows ?? [])
+
+// ---- 选手英雄数据：体量大，不随「获取全部数据」自动拉取，这里按需获取，复用第一页当前的赛季/赛段设置 ----
+
+const hasPlayerHeroData = computed(() => (fetchedData.value?.playerHeroRows.length ?? 0) > 0)
+const phError = ref('')
+
+const currentCfgLabel = computed(() => {
+  const cfg = defaultFormState()
+  return `赛季 ${cfg.seasonId} / 赛段 ${cfg.stageIds || '（未选择）'}`
+})
+
+async function loadPlayerHeroData() {
+  phError.value = ''
+  try {
+    await fetchPlayerHeroRows(defaultFormState())
+  } catch (err) {
+    phError.value = err instanceof Error ? err.message : String(err)
+  }
+}
 
 async function exportExcel() {
   if (!affinity.value) return
@@ -70,7 +91,33 @@ function loadPersistedFilters(): { cat: Record<string, Set<string>>; range: Reco
 
 const persisted = loadPersistedFilters()
 
-const sortState = ref<{ column: string; dir: 'asc' | 'desc' } | null>(null)
+function loadPersistedSort(): { column: string; dir: 'asc' | 'desc' } | null {
+  try {
+    const raw = localStorage.getItem(SORT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.column === 'string' && (parsed.dir === 'asc' || parsed.dir === 'desc')) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+const sortState = ref<{ column: string; dir: 'asc' | 'desc' } | null>(loadPersistedSort())
+
+watch(
+  sortState,
+  () => {
+    try {
+      if (sortState.value) localStorage.setItem(SORT_KEY, JSON.stringify(sortState.value))
+      else localStorage.removeItem(SORT_KEY)
+    } catch {
+      // localStorage 不可用或已满时忽略
+    }
+  },
+  { deep: true },
+)
+
 const columnFilters = ref<Record<string, Set<string>>>(persisted.cat)
 const columnRanges = ref<Record<string, RangeFilter>>(persisted.range)
 const openFilterColumn = ref<string | null>(null)
@@ -375,7 +422,17 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 
     <p v-if="!fetchedData" class="hint">请先在「获取全部数据」标签页点击「获取数据」。</p>
 
-    <template v-else-if="affinity">
+    <template v-else>
+      <div class="bp-data-status">
+        <span>队伍英雄亲合度需要「选手英雄数据」，将使用「获取全部数据」页面当前设置：{{ currentCfgLabel }}</span>
+        <button type="button" class="link-btn" :disabled="fetching" @click="loadPlayerHeroData">
+          {{ fetching ? '获取中...' : hasPlayerHeroData ? '重新获取选手英雄数据' : '获取选手英雄数据' }}
+        </button>
+      </div>
+      <p v-if="phError" class="season-status error">{{ phError }}</p>
+
+      <p v-if="!hasPlayerHeroData" class="hint">还没有选手英雄数据，点上面的按钮获取后即可查看队伍英雄亲合度。</p>
+      <template v-else-if="affinity">
       <div class="button-row">
         <button class="primary" :disabled="exporting" @click="exportExcel">{{ exporting ? '导出中...' : '导出 Excel' }}</button>
         <label class="radio-option">
@@ -477,6 +534,7 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
           </div>
         </template>
       </div>
+      </template>
     </template>
   </div>
 </template>

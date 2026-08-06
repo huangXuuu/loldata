@@ -140,6 +140,46 @@ export async function fetchAllData(cfg: FormState, opts: { log?: LogFn; forceRef
     log(`获取到 ${teamGameRaw.length} 条队伍小分数据`)
     const teamGameRows = processTeamGameData(teamGameRaw, teamIdNameMap, groupData)
 
+    // 选手英雄数据（逐个选手单独调接口，一个赛季可能上百名选手，接口调用量很大）不在这里拉，
+    // 只有「队伍英雄亲合度」真正要用到时才在那边按需获取，见 fetchPlayerHeroRows。
+    fetchedData.value = { playerRows, heroRows, teamRows, teamGameRows, playerHeroRows: [], groupData }
+    writeFetchedDataCache({
+      apiKey: apiCfg.apiKey,
+      seasonId: apiCfg.seasonId,
+      stageIds: apiCfg.playerStageIds,
+      filterDate: cfg.filterDate,
+      fetchedAt: Date.now(),
+      data: fetchedData.value,
+    })
+    log('数据获取完成，可在下方查看，或点击「导出 Excel」下载。')
+  } catch (err) {
+    console.error(err)
+    log(`出错: ${err instanceof Error ? err.message : String(err)}`, true)
+    throw err
+  } finally {
+    fetching.value = false
+  }
+}
+
+/** 选手英雄数据体量大（每个选手单独调一次接口），只有「队伍英雄亲合度」需要时才按需获取，
+ * 复用与主流程相同的赛季 / 赛段 / 密钥 / 过滤时间设置。要求 fetchedData 已经有主数据（先调 fetchAllData）。 */
+export async function fetchPlayerHeroRows(cfg: FormState, opts: { log?: LogFn } = {}): Promise<void> {
+  const log = opts.log ?? (() => {})
+  if (!fetchedData.value) throw new Error('尚未获取主数据，请先获取选手 / 英雄 / 队伍数据')
+
+  fetching.value = true
+  try {
+    const apiCfg: FetchConfig = {
+      apiKey: cfg.apiKey.trim(),
+      seasonId: Number(cfg.seasonId),
+      playerStageIds: cfg.stageIds.trim(),
+      heroStageIds: cfg.stageIds.trim(),
+      teamStageId: cfg.stageIds.trim(),
+    }
+
+    log('正在获取选手列表...')
+    const playerRaw = await fetchPlayerData(apiCfg)
+
     log('正在获取选手英雄数据...')
     let playerHeroRows: Row[] = []
     for (const player of playerRaw) {
@@ -159,16 +199,7 @@ export async function fetchAllData(cfg: FormState, opts: { log?: LogFn; forceRef
       log(`按过滤时间筛选后剩余 ${playerHeroRows.length} 条记录`)
     }
 
-    fetchedData.value = { playerRows, heroRows, teamRows, teamGameRows, playerHeroRows, groupData }
-    writeFetchedDataCache({
-      apiKey: apiCfg.apiKey,
-      seasonId: apiCfg.seasonId,
-      stageIds: apiCfg.playerStageIds,
-      filterDate: cfg.filterDate,
-      fetchedAt: Date.now(),
-      data: fetchedData.value,
-    })
-    log('数据获取完成，可在下方查看，或点击「导出 Excel」下载。')
+    fetchedData.value = { ...fetchedData.value, playerHeroRows }
   } catch (err) {
     console.error(err)
     log(`出错: ${err instanceof Error ? err.message : String(err)}`, true)

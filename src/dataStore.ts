@@ -24,6 +24,11 @@ export interface RangeFilter {
   max: string
 }
 
+export interface SortState {
+  column: string
+  dir: 'asc' | 'desc'
+}
+
 /** The data most recently fetched via GetAllDataView's "获取数据" — shared so other
  * views (e.g. 队伍英雄亲合度) can analyze the same data without a re-fetch or file upload. */
 export const fetchedData = ref<FetchedData | null>(null)
@@ -91,6 +96,42 @@ watch(
   },
   { deep: true },
 )
+
+const COLUMN_SORT_KEY = 'loldata_column_sort_v1'
+
+function loadPersistedSort(): Record<string, SortState | null> {
+  try {
+    const raw = localStorage.getItem(COLUMN_SORT_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Per-tab sort column/direction — persisted the same way as columnFilters/columnRanges. */
+export const columnSort = ref<Record<string, SortState | null>>(loadPersistedSort())
+
+watch(
+  columnSort,
+  () => {
+    try {
+      localStorage.setItem(COLUMN_SORT_KEY, JSON.stringify(columnSort.value))
+    } catch {
+      // localStorage 不可用或已满时忽略
+    }
+  },
+  { deep: true },
+)
+
+export function tabSort(tabKey: string): SortState | null {
+  return columnSort.value[tabKey] ?? null
+}
+
+export function setTabSort(tabKey: string, sort: SortState | null) {
+  columnSort.value[tabKey] = sort
+}
 
 // Mutating accessors: create the per-tab container if missing. Only call from
 // event handlers (never from computed()/render, to avoid mutating state while Vue tracks reads).

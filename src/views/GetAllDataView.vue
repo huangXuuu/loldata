@@ -14,10 +14,12 @@ import {
   numericColumnsFor,
   parseNumeric,
   resultTabs,
+  setTabSort,
   tabFilters,
   tabFiltersReadonly,
   tabRanges,
   tabRangesReadonly,
+  tabSort,
 } from '../dataStore'
 
 const PAGE_SIZE = 500
@@ -270,15 +272,15 @@ async function exportData() {
 
 const activeResultKey = ref('player')
 const activeResultTab = computed(() => resultTabs.value.find((t) => t.key === activeResultKey.value) ?? resultTabs.value[0])
+// 选手英雄数据体量大、只有「队伍英雄亲合度」用得到，这里不展示这个 tab（数据获取也挪过去了）
+const visibleResultTabs = computed(() => resultTabs.value.filter((t) => t.key !== 'playerHero'))
 
-const sortState = ref<{ column: string; dir: 'asc' | 'desc' } | null>(null)
 const openFilterColumn = ref<string | null>(null)
 const filterSearch = ref('')
 const currentPage = ref(1)
 const popoverStyle = ref({ top: '0px', left: '0px' })
 
 watch(activeResultKey, () => {
-  sortState.value = null
   openFilterColumn.value = null
   filterSearch.value = ''
   currentPage.value = 1
@@ -364,7 +366,7 @@ function toggleColumnVisibility(tabKey: string, column: string) {
     set.add(column)
     resetFilter(column)
     resetRangeFilter(column)
-    if (sortState.value?.column === column) sortState.value = null
+    if (tabSort(tabKey)?.column === column) setTabSort(tabKey, null)
   }
 }
 
@@ -512,12 +514,13 @@ onMounted(() => document.addEventListener('click', handleDocumentClick))
 onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 
 function toggleSort(column: string) {
-  if (!sortState.value || sortState.value.column !== column) {
-    sortState.value = { column, dir: 'asc' }
-  } else if (sortState.value.dir === 'asc') {
-    sortState.value = { column, dir: 'desc' }
+  const current = tabSort(activeResultKey.value)
+  if (!current || current.column !== column) {
+    setTabSort(activeResultKey.value, { column, dir: 'asc' })
+  } else if (current.dir === 'asc') {
+    setTabSort(activeResultKey.value, { column, dir: 'desc' })
   } else {
-    sortState.value = null
+    setTabSort(activeResultKey.value, null)
   }
 }
 
@@ -536,8 +539,9 @@ const displayRows = computed(() => {
   if (!tab) return []
   let rows = filteredRowsFor(activeResultKey.value)
 
-  if (sortState.value && tab.columns.includes(sortState.value.column)) {
-    const { column, dir } = sortState.value
+  const sort = tabSort(activeResultKey.value)
+  if (sort && tab.columns.includes(sort.column)) {
+    const { column, dir } = sort
     rows = [...rows].sort((a, b) => compareRows(a, b, column) * (dir === 'asc' ? 1 : -1))
   }
 
@@ -637,10 +641,10 @@ const pagedRows = computed(() => {
       <div v-for="(l, i) in logs" :key="i" class="log-line" :class="{ error: l.error }">{{ l.text }}</div>
     </div>
 
-    <div v-if="resultTabs.length" class="result-area">
+    <div v-if="visibleResultTabs.length" class="result-area">
       <div class="result-tabs">
         <button
-          v-for="t in resultTabs"
+          v-for="t in visibleResultTabs"
           :key="t.key"
           type="button"
           class="result-tab"
@@ -690,7 +694,7 @@ const pagedRows = computed(() => {
                 <div class="th-inner">
                   <span class="th-label" @click="toggleSort(c)">
                     {{ c }}
-                    <span v-if="sortState && sortState.column === c" class="sort-indicator">{{ sortState.dir === 'asc' ? '▲' : '▼' }}</span>
+                    <span v-if="tabSort(activeResultKey)?.column === c" class="sort-indicator">{{ tabSort(activeResultKey)!.dir === 'asc' ? '▲' : '▼' }}</span>
                   </span>
                   <button type="button" class="filter-btn" :class="{ active: isColumnFiltered(c) }" @click.stop="openFilterAt(c, $event)">▾</button>
                 </div>
