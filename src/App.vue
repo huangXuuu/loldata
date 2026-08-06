@@ -15,7 +15,17 @@ const tabs = [
 const active = ref<(typeof tabs)[number]['key']>('all')
 
 const AUTHOR_MID = '523253490'
-const PROMO_BVID = 'BV1a8uA6XEeT'
+
+// TODO: 发了新视频想换的话，把 BV 号换掉重新发布即可（平台没有"自动拉取最新视频"的接口，只能手动指定）
+const RECENT_BVIDS = ['BV1tTM26YESk', 'BV1MmM26KECU', 'BV1tzuA61EJY', 'BV1B83d6JEQ4', 'BV1kT3m6AEs6']
+
+interface RecentVideo {
+  bvid: string
+  title: string
+  cover: string | null
+}
+
+const recentVideos = ref<RecentVideo[]>(RECENT_BVIDS.map((bvid) => ({ bvid, title: bvid, cover: null })))
 
 interface ChangelogEntry {
   date: string
@@ -42,8 +52,23 @@ onMounted(async () => {
       }
     }
     navigateSupported.value = await window.toy.isSupport('navigate')
+
+    if (await window.toy.isSupport('getAuthorVideos')) {
+      const videosResult = await window.toy.getAuthorVideos({ videos: RECENT_BVIDS.map((bvid) => ({ bvid })) })
+      if (videosResult.status === 'ok' && Array.isArray(videosResult.data)) {
+        const byBvid = new Map(videosResult.data.filter((v) => v.bvid).map((v) => [v.bvid as string, v]))
+        recentVideos.value = RECENT_BVIDS.map((bvid) => {
+          const info = byBvid.get(bvid)
+          return {
+            bvid,
+            title: info?.title ?? bvid,
+            cover: info?.cover ?? info?.pic ?? null,
+          }
+        })
+      }
+    }
   } catch (err) {
-    console.error('[ToySDK] getAuthorProfile failed', err)
+    console.error('[ToySDK] getAuthorProfile/getAuthorVideos failed', err)
   }
 })
 
@@ -56,10 +81,6 @@ function openVideoBv(bvid: string) {
     return
   }
   window.open(`https://www.bilibili.com/video/${bvid}`, '_blank')
-}
-
-function openVideo() {
-  openVideoBv(PROMO_BVID)
 }
 
 function openAuthorSpace() {
@@ -76,10 +97,9 @@ function openAuthorSpace() {
 
 <template>
   <h1>【B站心语悦无言】LPL赛事数据工具</h1>
-  <p class="subtitle">数据全部在浏览器本地处理，不会上传到除赛事数据接口以外的任何服务器</p>
+  <p class="subtitle">目前是小 UP 为爱发电阶段，租的小服务器经常顶不住大家访问，如果遇到报错，麻烦私信联系 UP</p>
 
   <div class="promo-bar">
-    <button type="button" class="link-btn" @click="openVideo">📺 观看教程视频</button>
     <button type="button" class="link-btn promo-follow" @click="openAuthorSpace">
       <img
         v-if="authorProfile?.avatar"
@@ -89,6 +109,21 @@ function openAuthorSpace() {
         referrerpolicy="no-referrer"
       />
       ➕ 关注 UP 主
+    </button>
+  </div>
+
+  <div class="recent-videos">
+    <button
+      v-for="v in recentVideos"
+      :key="v.bvid"
+      type="button"
+      class="recent-video-card"
+      :title="v.title"
+      @click="openVideoBv(v.bvid)"
+    >
+      <img v-if="v.cover" :src="v.cover" alt="" class="recent-video-cover" referrerpolicy="no-referrer" />
+      <div v-else class="recent-video-cover recent-video-cover-empty">📺</div>
+      <span class="recent-video-title">{{ v.title }}</span>
     </button>
   </div>
 

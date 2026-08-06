@@ -20,9 +20,30 @@ declare global {
     extra?: Record<string, unknown>
   }
 
+  interface ToyVideoRef {
+    aid?: number
+    bvid?: string
+  }
+
+  interface ToyAuthorVideo {
+    aid?: number
+    bvid?: string
+    title?: string
+    cover?: string
+    pic?: string
+    [key: string]: unknown
+  }
+
+  interface ToyAuthorVideosResp {
+    status: 'ok' | string
+    data?: ToyAuthorVideo[]
+    message?: string
+  }
+
   interface ToySDK {
     isSupport(ability: string): Promise<boolean>
     getAuthorProfile(): Promise<ToyAuthorProfileResp>
+    getAuthorVideos(params: { videos: ToyVideoRef[] }): Promise<ToyAuthorVideosResp>
     navigate(params: ToyNavigateParams): Promise<void>
   }
 
