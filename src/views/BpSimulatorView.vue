@@ -56,6 +56,7 @@ const availableLanes = computed(() => {
 })
 
 const activeLane = ref<string | null>(null)
+const poolVisibility = ref<'all' | 'selectable'>('all')
 
 function bpRateFor(c: Champion): number {
   const stat = heroStatsByName.value.get(c.name)
@@ -112,13 +113,25 @@ function newGame(): GameRecord {
 const seriesLength = ref<1 | 3 | 5>(3)
 const games = ref<GameRecord[]>([newGame()])
 const currentGameIndex = ref(0)
-const viewingGameIndex = ref(0)
+// 用户额外勾选要对照查看的历史局（当前进行中的这一局永远显示，不用勾）
+const visibleGameIndices = ref<Set<number>>(new Set())
 const search = ref('')
 
 const currentGame = computed(() => games.value[currentGameIndex.value])
-// 正在查看的这一局（可以是历史局，只读）；仅当查看的就是当前正在进行的这一局时才可操作
-const viewingGame = computed(() => games.value[viewingGameIndex.value])
-const isViewingCurrentGame = computed(() => viewingGameIndex.value === currentGameIndex.value)
+// 当前进行中的这一局 + 用户勾选要对照查看的历史局，按局数排序，可以同时看多局做对比
+const displayedGameIndices = computed(() => {
+  const set = new Set(visibleGameIndices.value)
+  set.add(currentGameIndex.value)
+  return [...set].filter((i) => i < games.value.length).sort((a, b) => a - b)
+})
+
+function toggleGameVisibility(i: number) {
+  if (i === currentGameIndex.value) return
+  const next = new Set(visibleGameIndices.value)
+  if (next.has(i)) next.delete(i)
+  else next.add(i)
+  visibleGameIndices.value = next
+}
 
 const currentStepIndex = computed(() => currentGame.value.steps.findIndex((s) => s === null))
 const isGameComplete = computed(() => currentStepIndex.value === -1)
@@ -180,6 +193,9 @@ const filteredChampions = computed(() => {
   if (activeLane.value) {
     list = list.filter((c) => heroStatsByName.value.get(c.name)?.lanes.has(activeLane.value!))
   }
+  if (poolVisibility.value === 'selectable') {
+    list = list.filter((c) => isSelectable(c))
+  }
   return [...list].sort((a, b) => bpRateFor(b) - bpRateFor(a))
 })
 
@@ -206,7 +222,7 @@ function resetCurrentGame() {
 function resetSeries() {
   games.value = [newGame()]
   currentGameIndex.value = 0
-  viewingGameIndex.value = 0
+  visibleGameIndices.value = new Set()
   search.value = ''
 }
 
@@ -216,12 +232,7 @@ function startNextGame() {
   if (!canStartNextGame.value) return
   games.value.push(newGame())
   currentGameIndex.value += 1
-  viewingGameIndex.value = currentGameIndex.value
   search.value = ''
-}
-
-function viewGame(i: number) {
-  viewingGameIndex.value = i
 }
 
 const seriesFinished = computed(() => isGameComplete.value && currentGameIndex.value + 1 >= seriesLength.value)
@@ -265,14 +276,16 @@ function endSeriesEarly() {
         :key="i"
         type="button"
         class="bp-game-tab"
-        :class="{ active: viewingGameIndex === i, live: currentGameIndex === i }"
-        @click="viewGame(i)"
+        :class="{ active: displayedGameIndices.includes(i), live: currentGameIndex === i }"
+        :disabled="i === currentGameIndex"
+        :title="i === currentGameIndex ? '当前进行中的这一局始终显示' : '勾选后可以和当前局对照查看'"
+        @click="toggleGameVisibility(i)"
       >
-        第 {{ i + 1 }} 局{{ i === currentGameIndex && !isGameComplete ? '（进行中）' : '' }}
+        第 {{ i + 1 }} 局{{ i === currentGameIndex ? '（进行中）' : '' }}
       </button>
     </div>
 
-    <div v-if="isViewingCurrentGame" class="bp-turn-indicator" :class="{ done: isGameComplete }">
+    <div class="bp-turn-indicator" :class="{ done: isGameComplete }">
       <template v-if="currentStep">
         轮到 <strong :class="'side-' + currentStep.side">{{ currentStep.side === 'blue' ? '蓝色方' : '红色方' }}</strong>
         {{ currentStep.type === 'ban' ? 'Ban' : 'Pick' }}（{{ currentStep.label }}）
@@ -283,86 +296,99 @@ function endSeriesEarly() {
         <button type="button" class="primary small" @click="startNextGame">进入下一局</button>
       </template>
     </div>
-    <div v-else class="bp-turn-indicator done">
-      正在查看第 {{ viewingGameIndex + 1 }} 局的历史记录（只读）
-      <button type="button" class="link-btn" @click="viewGame(currentGameIndex)">回到当前局</button>
-    </div>
 
-    <div class="bp-board">
-      <div class="bp-side">
-        <h3 class="side-blue">蓝色方</h3>
-        <div class="bp-slot-row">
-          <div
-            v-for="({ step, i }, idx) in blueBanSlots"
-            :key="'bb' + idx"
-            class="bp-slot ban"
-            :class="{ active: isViewingCurrentGame && currentStepIndex === i }"
-          >
-            <img v-if="viewingGame.steps[i] && championIconUrl(viewingGame.steps[i]!.icon)" :src="championIconUrl(viewingGame.steps[i]!.icon)!" :alt="viewingGame.steps[i]!.name" />
-            <span v-else-if="viewingGame.steps[i]" class="bp-slot-noicon">{{ viewingGame.steps[i]!.name }}</span>
-            <span v-else class="bp-slot-label">{{ step.label }}</span>
+    <div v-for="i in displayedGameIndices" :key="i" class="bp-board-wrap">
+      <div v-if="displayedGameIndices.length > 1" class="bp-board-label">
+        第 {{ i + 1 }} 局{{ i === currentGameIndex ? '（进行中）' : '' }}
+      </div>
+      <div class="bp-board">
+        <div class="bp-side">
+          <h3 class="side-blue">蓝色方</h3>
+          <div class="bp-slot-row">
+            <div
+              v-for="({ step, i: si }, idx) in blueBanSlots"
+              :key="'bb' + idx"
+              class="bp-slot ban"
+              :class="{ active: i === currentGameIndex && currentStepIndex === si }"
+            >
+              <img v-if="games[i].steps[si] && championIconUrl(games[i].steps[si]!.icon)" :src="championIconUrl(games[i].steps[si]!.icon)!" :alt="games[i].steps[si]!.name" />
+              <span v-else-if="games[i].steps[si]" class="bp-slot-noicon">{{ games[i].steps[si]!.name }}</span>
+              <span v-else class="bp-slot-label">{{ step.label }}</span>
+            </div>
+          </div>
+          <div class="bp-slot-row picks">
+            <div
+              v-for="({ step, i: si }, idx) in bluePickSlots"
+              :key="'bp' + idx"
+              class="bp-slot pick"
+              :class="{ active: i === currentGameIndex && currentStepIndex === si }"
+            >
+              <img v-if="games[i].steps[si] && championIconUrl(games[i].steps[si]!.icon)" :src="championIconUrl(games[i].steps[si]!.icon)!" :alt="games[i].steps[si]!.name" />
+              <span v-else-if="games[i].steps[si]" class="bp-slot-noicon">{{ games[i].steps[si]!.name }}</span>
+              <span v-else class="bp-slot-label">{{ step.label }}</span>
+              <div v-if="games[i].steps[si]" class="bp-slot-name">{{ games[i].steps[si]!.name }}</div>
+            </div>
           </div>
         </div>
-        <div class="bp-slot-row picks">
-          <div
-            v-for="({ step, i }, idx) in bluePickSlots"
-            :key="'bp' + idx"
-            class="bp-slot pick"
-            :class="{ active: isViewingCurrentGame && currentStepIndex === i }"
-          >
-            <img v-if="viewingGame.steps[i] && championIconUrl(viewingGame.steps[i]!.icon)" :src="championIconUrl(viewingGame.steps[i]!.icon)!" :alt="viewingGame.steps[i]!.name" />
-            <span v-else-if="viewingGame.steps[i]" class="bp-slot-noicon">{{ viewingGame.steps[i]!.name }}</span>
-            <span v-else class="bp-slot-label">{{ step.label }}</span>
-            <div v-if="viewingGame.steps[i]" class="bp-slot-name">{{ viewingGame.steps[i]!.name }}</div>
+
+        <div class="bp-side">
+          <h3 class="side-red">红色方</h3>
+          <div class="bp-slot-row">
+            <div
+              v-for="({ step, i: si }, idx) in redBanSlots"
+              :key="'rb' + idx"
+              class="bp-slot ban"
+              :class="{ active: i === currentGameIndex && currentStepIndex === si }"
+            >
+              <img v-if="games[i].steps[si] && championIconUrl(games[i].steps[si]!.icon)" :src="championIconUrl(games[i].steps[si]!.icon)!" :alt="games[i].steps[si]!.name" />
+              <span v-else-if="games[i].steps[si]" class="bp-slot-noicon">{{ games[i].steps[si]!.name }}</span>
+              <span v-else class="bp-slot-label">{{ step.label }}</span>
+            </div>
+          </div>
+          <div class="bp-slot-row picks">
+            <div
+              v-for="({ step, i: si }, idx) in redPickSlots"
+              :key="'rp' + idx"
+              class="bp-slot pick"
+              :class="{ active: i === currentGameIndex && currentStepIndex === si }"
+            >
+              <img v-if="games[i].steps[si] && championIconUrl(games[i].steps[si]!.icon)" :src="championIconUrl(games[i].steps[si]!.icon)!" :alt="games[i].steps[si]!.name" />
+              <span v-else-if="games[i].steps[si]" class="bp-slot-noicon">{{ games[i].steps[si]!.name }}</span>
+              <span v-else class="bp-slot-label">{{ step.label }}</span>
+              <div v-if="games[i].steps[si]" class="bp-slot-name">{{ games[i].steps[si]!.name }}</div>
+            </div>
           </div>
         </div>
       </div>
-
-      <div class="bp-side">
-        <h3 class="side-red">红色方</h3>
-        <div class="bp-slot-row">
-          <div
-            v-for="({ step, i }, idx) in redBanSlots"
-            :key="'rb' + idx"
-            class="bp-slot ban"
-            :class="{ active: isViewingCurrentGame && currentStepIndex === i }"
-          >
-            <img v-if="viewingGame.steps[i] && championIconUrl(viewingGame.steps[i]!.icon)" :src="championIconUrl(viewingGame.steps[i]!.icon)!" :alt="viewingGame.steps[i]!.name" />
-            <span v-else-if="viewingGame.steps[i]" class="bp-slot-noicon">{{ viewingGame.steps[i]!.name }}</span>
-            <span v-else class="bp-slot-label">{{ step.label }}</span>
-          </div>
-        </div>
-        <div class="bp-slot-row picks">
-          <div
-            v-for="({ step, i }, idx) in redPickSlots"
-            :key="'rp' + idx"
-            class="bp-slot pick"
-            :class="{ active: isViewingCurrentGame && currentStepIndex === i }"
-          >
-            <img v-if="viewingGame.steps[i] && championIconUrl(viewingGame.steps[i]!.icon)" :src="championIconUrl(viewingGame.steps[i]!.icon)!" :alt="viewingGame.steps[i]!.name" />
-            <span v-else-if="viewingGame.steps[i]" class="bp-slot-noicon">{{ viewingGame.steps[i]!.name }}</span>
-            <span v-else class="bp-slot-label">{{ step.label }}</span>
-            <div v-if="viewingGame.steps[i]" class="bp-slot-name">{{ viewingGame.steps[i]!.name }}</div>
-          </div>
-        </div>
-      </div>
     </div>
 
-    <div v-if="isViewingCurrentGame && !isGameComplete" class="bp-picker">
-      <div v-if="availableLanes.length" class="bp-lane-filter">
-        <button type="button" class="bp-lane-chip" :class="{ active: activeLane === null }" @click="activeLane = null">
-          全部
-        </button>
-        <button
-          v-for="lane in availableLanes"
-          :key="lane"
-          type="button"
-          class="bp-lane-chip"
-          :class="{ active: activeLane === lane }"
-          @click="activeLane = lane"
-        >
-          {{ lane }}
-        </button>
+    <div v-if="!isGameComplete" class="bp-picker">
+      <div class="bp-picker-toolbar">
+        <div v-if="availableLanes.length" class="bp-lane-filter">
+          <button type="button" class="bp-lane-chip" :class="{ active: activeLane === null }" @click="activeLane = null">
+            全部
+          </button>
+          <button
+            v-for="lane in availableLanes"
+            :key="lane"
+            type="button"
+            class="bp-lane-chip"
+            :class="{ active: activeLane === lane }"
+            @click="activeLane = lane"
+          >
+            {{ lane }}
+          </button>
+        </div>
+        <div class="bp-visibility-toggle">
+          <label class="radio-option">
+            <input v-model="poolVisibility" type="radio" value="all" />
+            全部显示
+          </label>
+          <label class="radio-option">
+            <input v-model="poolVisibility" type="radio" value="selectable" />
+            只显示可选
+          </label>
+        </div>
       </div>
       <input v-model="search" type="text" placeholder="搜索英雄（中文名 / 英文名 / 拼音）..." class="bp-search" />
       <div class="bp-champion-grid">

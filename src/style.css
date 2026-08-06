@@ -798,7 +798,6 @@ button.primary.small {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
 }
 
 .bp-lane-chip {
@@ -878,6 +877,36 @@ button.primary.small {
   border-color: var(--accent);
 }
 
+.bp-game-tab:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.bp-board-wrap {
+  margin-bottom: 16px;
+}
+
+.bp-board-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.bp-picker-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.bp-visibility-toggle {
+  display: flex;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+
 .bp-turn-indicator {
   padding: 10px 14px;
   border-radius: 8px;
@@ -954,6 +983,7 @@ button.primary.small {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: top;
 }
 
 .bp-slot-label {
@@ -1032,6 +1062,7 @@ button.primary.small {
   height: 40px;
   border-radius: 6px;
   object-fit: cover;
+  object-position: top;
 }
 
 .bp-champion-noicon {
