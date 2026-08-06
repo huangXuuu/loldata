@@ -59,19 +59,20 @@ onMounted(async () => {
     }
     navigateSupported.value = await window.toy.isSupport('navigate')
 
-    const videosSupported = await window.toy.isSupport('getAuthorVideos')
-    console.log('[ToySDK] isSupport(getAuthorVideos):', videosSupported)
-    if (videosSupported) {
+    if (await window.toy.isSupport('getAuthorVideos')) {
       const videosResult = await window.toy.getAuthorVideos({ videos: RECENT_BVIDS.map((bvid) => ({ bvid })) })
-      console.log('[ToySDK] getAuthorVideos result:', JSON.stringify(videosResult))
-      if (videosResult.status === 'ok' && Array.isArray(videosResult.data)) {
-        const byBvid = new Map(videosResult.data.filter((v) => v.bvid).map((v) => [v.bvid as string, v]))
+      if (videosResult.status === 'ok' && Array.isArray(videosResult.items)) {
+        const byBvid = new Map(
+          videosResult.items
+            .filter((item) => item.status === 'ok' && item.data?.bvid)
+            .map((item) => [item.data!.bvid as string, item.data!]),
+        )
         recentVideos.value = RECENT_BVIDS.map((bvid) => {
           const info = byBvid.get(bvid)
           return {
             bvid,
             title: info?.title ?? bvid,
-            cover: info?.cover ?? info?.pic ?? null,
+            cover: info?.cover ? info.cover.replace(/^http:/, 'https:') : null,
           }
         })
       } else {

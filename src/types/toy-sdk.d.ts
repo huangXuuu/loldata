@@ -30,13 +30,18 @@ declare global {
     bvid?: string
     title?: string
     cover?: string
-    pic?: string
     [key: string]: unknown
+  }
+
+  interface ToyAuthorVideoItem {
+    ref: ToyVideoRef
+    status: 'ok' | string
+    data?: ToyAuthorVideo
   }
 
   interface ToyAuthorVideosResp {
     status: 'ok' | string
-    data?: ToyAuthorVideo[]
+    items?: ToyAuthorVideoItem[]
     message?: string
   }
 
