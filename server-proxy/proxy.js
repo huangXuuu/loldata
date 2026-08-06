@@ -55,7 +55,11 @@ function clientIp(req) {
 }
 
 // Simple in-memory sliding-window rate limit: per IP, per minute.
-const RATE_LIMIT_PER_MINUTE = 60
+// Normal usage is bursty and legitimately request-heavy — season-tree probing alone
+// fires ~30-40 requests on load, and a single "获取数据" pull calls schedule/stage
+// once per player (a season can have 100+ players) — so this needs real headroom
+// above a typical scraping-bot threshold, not a tight cap.
+const RATE_LIMIT_PER_MINUTE = 600
 const rateBuckets = new Map() // ip -> { windowStart, count }
 
 function isRateLimited(ip) {
