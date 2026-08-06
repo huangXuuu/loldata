@@ -1,6 +1,73 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ALL_CHAMPIONS, championIconUrl, type Champion } from '../heroPool'
+import { defaultFormState, fetchAllData, fetching } from '../dataFetch'
+import { fetchedData } from '../dataStore'
+
+const LANE_ORDER = ['上单', '打野', '中单', '射手', '辅助']
+
+const loadError = ref('')
+
+onMounted(async () => {
+  if (fetchedData.value) return
+  try {
+    await fetchAllData(defaultFormState())
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : String(err)
+  }
+})
+
+interface HeroStat {
+  lanes: Set<string>
+  bpRateByLane: Map<string, number>
+  maxBpRate: number
+}
+
+// 从「获取全部数据」拉到的英雄数据里读 英雄分路 / BP率，做分组和排序用；
+// 同一个英雄可能按分路拆成多行（不同分路 BP率不同），所以按英雄名聚合
+const heroStatsByName = computed(() => {
+  const map = new Map<string, HeroStat>()
+  const rows = fetchedData.value?.heroRows ?? []
+  for (const row of rows) {
+    const name = String(row['英雄名'] ?? '').trim()
+    if (!name) continue
+    const lane = String(row['英雄分路'] ?? '').trim()
+    const bpRate = parseFloat(String(row['BP率'] ?? '').replace('%', '')) || 0
+    let stat = map.get(name)
+    if (!stat) {
+      stat = { lanes: new Set(), bpRateByLane: new Map(), maxBpRate: 0 }
+      map.set(name, stat)
+    }
+    if (lane) {
+      stat.lanes.add(lane)
+      stat.bpRateByLane.set(lane, bpRate)
+    }
+    if (bpRate > stat.maxBpRate) stat.maxBpRate = bpRate
+  }
+  return map
+})
+
+const availableLanes = computed(() => {
+  const set = new Set<string>()
+  for (const stat of heroStatsByName.value.values()) {
+    for (const lane of stat.lanes) set.add(lane)
+  }
+  return LANE_ORDER.filter((l) => set.has(l))
+})
+
+const activeLane = ref<string | null>(null)
+
+function bpRateFor(c: Champion): number {
+  const stat = heroStatsByName.value.get(c.name)
+  if (!stat) return -1
+  if (activeLane.value) return stat.bpRateByLane.get(activeLane.value) ?? -1
+  return stat.maxBpRate
+}
+
+function bpRateLabel(c: Champion): string {
+  const rate = bpRateFor(c)
+  return rate >= 0 ? `${rate.toFixed(2)}%` : ''
+}
 
 type Side = 'blue' | 'red'
 type ActionType = 'ban' | 'pick'
@@ -103,13 +170,17 @@ function unselectableReason(c: Champion): string {
 
 const filteredChampions = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return ALL_CHAMPIONS
-  return ALL_CHAMPIONS.filter(
+  let list = ALL_CHAMPIONS.filter(
     (c) =>
+      !q ||
       c.name.includes(q) ||
       c.alias.toLowerCase().includes(q) ||
       c.keywords.some((k) => k.toLowerCase().includes(q)),
   )
+  if (activeLane.value) {
+    list = list.filter((c) => heroStatsByName.value.get(c.name)?.lanes.has(activeLane.value!))
+  }
+  return [...list].sort((a, b) => bpRateFor(b) - bpRateFor(a))
 })
 
 function selectChampion(c: Champion) {
@@ -164,6 +235,11 @@ function endSeriesEarly() {
   <div class="card">
     <h2>全局 BP 模拟器</h2>
     <p class="desc">按官方职业赛事两阶段 BP 顺序模拟禁用 / 选用，支持 Bo3 / Bo5 系列赛的 Fearless Draft（同系列赛已选用的英雄，后续场次双方都不能再选）。</p>
+
+    <div v-if="fetching && !fetchedData" class="bp-data-status">正在获取赛事数据（用于按分路分组、按 BP 率排序），请稍候...</div>
+    <div v-else-if="loadError && !fetchedData" class="bp-data-status error">
+      获取数据失败：{{ loadError }}。可以先到「获取全部数据」标签页手动获取，暂时仍可正常使用英雄池（无法按分路 / BP 率排序）。
+    </div>
 
     <div class="bp-toolbar">
       <label class="bp-series-select">
@@ -273,7 +349,22 @@ function endSeriesEarly() {
     </div>
 
     <div v-if="isViewingCurrentGame && !isGameComplete" class="bp-picker">
-      <input v-model="search" type="text" placeholder="搜索英雄（中文名 / 英文名）..." class="bp-search" />
+      <div v-if="availableLanes.length" class="bp-lane-filter">
+        <button type="button" class="bp-lane-chip" :class="{ active: activeLane === null }" @click="activeLane = null">
+          全部
+        </button>
+        <button
+          v-for="lane in availableLanes"
+          :key="lane"
+          type="button"
+          class="bp-lane-chip"
+          :class="{ active: activeLane === lane }"
+          @click="activeLane = lane"
+        >
+          {{ lane }}
+        </button>
+      </div>
+      <input v-model="search" type="text" placeholder="搜索英雄（中文名 / 英文名 / 拼音）..." class="bp-search" />
       <div class="bp-champion-grid">
         <button
           v-for="c in filteredChampions"
@@ -287,6 +378,7 @@ function endSeriesEarly() {
           <img v-if="championIconUrl(c.icon)" :src="championIconUrl(c.icon)!" :alt="c.name" />
           <span v-else class="bp-champion-noicon">{{ c.name }}</span>
           <span class="bp-champion-name">{{ c.name }}</span>
+          <span v-if="bpRateLabel(c)" class="bp-champion-rate">{{ bpRateLabel(c) }}</span>
         </button>
       </div>
     </div>

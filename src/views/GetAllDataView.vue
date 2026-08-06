@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { fetchHeroData, fetchPlayerData, fetchPlayerHeroData, fetchSeasonList, fetchStageList, fetchTeamData, fetchTeamGameData, type FetchConfig, type StageInfo } from '../api'
-import { processHeroData, processPlayerData, processPlayerHeroData, processTeamData, processTeamGameData } from '../dataProcessor'
+import { fetchSeasonList, fetchStageList, type StageInfo } from '../api'
 import { exportToExcel, type ExportColumnOverrides } from '../excelExporter'
 import { downloadWorkbook } from '../utils/excel'
+import { fetchAllData, fetching, loadFormState, saveFormState, tryUseCachedData, type FormState } from '../dataFetch'
 import { DEFAULT_API_KEY, DEFAULT_SEASON_ID, DEFAULT_STAGE_IDS } from '../config'
+import type { Row } from '../types'
 import {
   columnFilters,
   columnRanges,
@@ -17,16 +18,11 @@ import {
   tabFiltersReadonly,
   tabRanges,
   tabRangesReadonly,
-  type FetchedData,
 } from '../dataStore'
-import type { Row } from '../types'
 
 const PAGE_SIZE = 500
 const FILTER_OPTION_LIMIT = 300
 const HIDDEN_COLUMNS_KEY = 'loldata_hidden_columns_v1'
-const FORM_STATE_KEY = 'loldata_form_state_v1'
-const FETCHED_DATA_CACHE_KEY = 'loldata_fetched_data_v1'
-const FETCHED_DATA_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 interface SeasonNode {
   seasonId: number
@@ -38,24 +34,6 @@ const SEASON_CACHE_KEY = 'loldata_season_tree_v2'
 const PROBE_BEFORE = 20
 const PROBE_AFTER = 10
 
-interface FormState {
-  apiKey: string
-  filterDate: string
-  seasonId: number
-  stageIds: string
-}
-
-function loadFormState(): Partial<FormState> {
-  try {
-    const raw = localStorage.getItem(FORM_STATE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed !== null ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
 const savedForm = loadFormState()
 
 const apiKey = ref(savedForm.apiKey ?? DEFAULT_API_KEY)
@@ -66,12 +44,7 @@ const teamStageId = ref(savedForm.stageIds ?? DEFAULT_STAGE_IDS)
 const filterDate = ref(savedForm.filterDate ?? '')
 
 watch([apiKey, filterDate, seasonId, playerStageIds], () => {
-  try {
-    const state: FormState = { apiKey: apiKey.value, filterDate: filterDate.value, seasonId: seasonId.value, stageIds: playerStageIds.value }
-    localStorage.setItem(FORM_STATE_KEY, JSON.stringify(state))
-  } catch {
-    // localStorage 不可用或已满时忽略
-  }
+  saveFormState({ apiKey: apiKey.value, filterDate: filterDate.value, seasonId: seasonId.value, stageIds: playerStageIds.value })
 })
 
 const seasonNodes = ref<SeasonNode[]>([])
@@ -215,7 +188,6 @@ async function applyCustomSeason() {
 
 onMounted(() => loadSeasonTree(false))
 
-const fetching = ref(false)
 const forceRefetch = ref(false)
 const exporting = ref(false)
 const exportMode = ref<'all' | 'filtered'>('all')
@@ -225,133 +197,21 @@ function log(text: string, error = false) {
   logs.value.push({ text: `[${new Date().toLocaleTimeString()}] ${text}`, error })
 }
 
-interface FetchedDataCache {
-  apiKey: string
-  seasonId: number
-  stageIds: string
-  filterDate: string
-  fetchedAt: number
-  data: FetchedData
-}
-
-function readFetchedDataCache(): FetchedDataCache | null {
-  try {
-    const raw = localStorage.getItem(FETCHED_DATA_CACHE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed?.data) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function writeFetchedDataCache(cache: FetchedDataCache) {
-  try {
-    localStorage.setItem(FETCHED_DATA_CACHE_KEY, JSON.stringify(cache))
-  } catch {
-    // localStorage 不可用或数据过大时忽略缓存，不影响当次获取结果
-  }
-}
-
-function selectionMatchesCache(cache: FetchedDataCache): boolean {
-  return (
-    cache.apiKey === apiKey.value.trim() &&
-    cache.seasonId === Number(seasonId.value) &&
-    cache.stageIds === playerStageIds.value.trim() &&
-    cache.filterDate === filterDate.value &&
-    Date.now() - cache.fetchedAt <= FETCHED_DATA_CACHE_TTL_MS
-  )
-}
-
-/** 命中本地缓存时直接展示，不发任何请求；返回是否命中 */
-function tryUseCachedData(): boolean {
-  if (forceRefetch.value) return false
-  const cached = readFetchedDataCache()
-  if (!cached || !selectionMatchesCache(cached)) return false
-  fetchedData.value = cached.data
-  activeResultKey.value = 'player'
-  log('赛季 / 赛段选择未变化，已使用本地缓存数据（未调用接口）。')
-  return true
+function currentFormState(): FormState {
+  return { apiKey: apiKey.value, seasonId: Number(seasonId.value), stageIds: playerStageIds.value, filterDate: filterDate.value }
 }
 
 onMounted(() => {
-  tryUseCachedData()
+  if (tryUseCachedData(currentFormState(), log)) activeResultKey.value = 'player'
 })
 
 async function fetchData() {
   logs.value = []
-  fetching.value = true
   try {
-    if (tryUseCachedData()) return
-
-    fetchedData.value = null
-    const cfg: FetchConfig = {
-      apiKey: apiKey.value.trim(),
-      seasonId: Number(seasonId.value),
-      playerStageIds: playerStageIds.value.trim(),
-      heroStageIds: heroStageIds.value.trim(),
-      teamStageId: teamStageId.value.trim(),
-    }
-    const groupData: Record<string, string> = {}
-
-    log('正在获取选手数据...')
-    const playerRaw = await fetchPlayerData(cfg)
-    log(`获取到 ${playerRaw.length} 条选手数据`)
-    const playerRows = processPlayerData(playerRaw)
-
-    log('正在获取英雄数据...')
-    const heroRaw = await fetchHeroData(cfg)
-    log(`获取到 ${heroRaw.length} 条英雄数据`)
-    const heroRows = processHeroData(heroRaw)
-
-    log('正在获取队伍数据...')
-    const teamRaw = await fetchTeamData(cfg)
-    log(`获取到 ${teamRaw.length} 条队伍数据`)
-    const teamRows = processTeamData(teamRaw)
-    const teamIdNameMap: Record<number, string> = {}
-    for (const t of teamRaw) teamIdNameMap[t.teamId] = t.teamName ?? ''
-
-    log('正在获取队伍小分数据...')
-    const teamGameRaw = await fetchTeamGameData(cfg)
-    log(`获取到 ${teamGameRaw.length} 条队伍小分数据`)
-    const teamGameRows = processTeamGameData(teamGameRaw, teamIdNameMap, groupData)
-
-    log('正在获取选手英雄数据...')
-    let playerHeroRows: Row[] = []
-    for (const player of playerRaw) {
-      const playerId = player.playerId
-      if (!playerId) continue
-      const records = await fetchPlayerHeroData(playerId, cfg)
-      playerHeroRows = playerHeroRows.concat(processPlayerHeroData(records, playerId, player.playerName ?? ''))
-    }
-    log(`选手英雄数据处理完成: ${playerHeroRows.length} 条记录`)
-
-    if (filterDate.value) {
-      const threshold = new Date(filterDate.value).getTime()
-      playerHeroRows = playerHeroRows.filter((r) => {
-        const t = new Date(String(r['选取时间'])).getTime()
-        return Number.isFinite(t) && t > threshold
-      })
-      log(`按过滤时间筛选后剩余 ${playerHeroRows.length} 条记录`)
-    }
-
-    fetchedData.value = { playerRows, heroRows, teamRows, teamGameRows, playerHeroRows, groupData }
-    activeResultKey.value = 'player'
-    writeFetchedDataCache({
-      apiKey: apiKey.value.trim(),
-      seasonId: Number(seasonId.value),
-      stageIds: playerStageIds.value.trim(),
-      filterDate: filterDate.value,
-      fetchedAt: Date.now(),
-      data: fetchedData.value,
-    })
-    log('数据获取完成，可在下方查看，或点击「导出 Excel」下载。')
-  } catch (err) {
-    console.error(err)
-    log(`出错: ${err instanceof Error ? err.message : String(err)}`, true)
-  } finally {
-    fetching.value = false
+    await fetchAllData(currentFormState(), { log, forceRefetch: forceRefetch.value })
+    if (fetchedData.value) activeResultKey.value = 'player'
+  } catch {
+    // fetchAllData 已经把出错信息记进 log 了
   }
 }
 
