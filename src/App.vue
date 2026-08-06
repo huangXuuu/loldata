@@ -35,6 +35,12 @@ interface ChangelogEntry {
 
 // TODO: 补充完整的更新记录（日期 + 功能说明 + 对应讲解视频 BV 号，没有视频的条目可省略 bvid）
 const CHANGELOG: ChangelogEntry[] = [
+  {
+    date: '2026-08-06',
+    title:
+      '新增「全局BP模拟器」：标准两阶段禁用 / 选用流程，支持 Bo3 / Bo5 系列赛 Fearless Draft、按分路筛选、按 BP率 / 胜率排序、多局对照查看',
+    // TODO: 今晚录完视频后把 BV 号填进来
+  },
   { date: '2026-08-04', title: '工具正式发布：赛季 / 赛段浏览、数据获取筛选与 Excel 导出', bvid: 'BV1a8uA6XEeT' },
 ]
 
