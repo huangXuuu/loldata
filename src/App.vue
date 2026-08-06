@@ -17,7 +17,7 @@ const active = ref<(typeof tabs)[number]['key']>('all')
 const AUTHOR_MID = '523253490'
 
 // TODO: 发了新视频想换的话，把 BV 号换掉重新发布即可（平台没有"自动拉取最新视频"的接口，只能手动指定）
-const RECENT_BVIDS = ['BV1tTM26YESk', 'BV1MmM26KECU', 'BV1tzuA61EJY', 'BV1B83d6JEQ4', 'BV1kT3m6AEs6']
+const RECENT_BVIDS = ['BV184uH6qEXP', 'BV1tTM26YESk', 'BV1MmM26KECU', 'BV1tzuA61EJY', 'BV1B83d6JEQ4']
 
 interface RecentVideo {
   bvid: string
@@ -39,7 +39,7 @@ const CHANGELOG: ChangelogEntry[] = [
     date: '2026-08-06',
     title:
       '新增「全局BP模拟器」：标准两阶段禁用 / 选用流程，支持 Bo3 / Bo5 系列赛 Fearless Draft、按分路筛选、按 BP率 / 胜率排序、多局对照查看',
-    // TODO: 今晚录完视频后把 BV 号填进来
+    bvid: 'BV1xdun6ZEbX',
   },
   { date: '2026-08-04', title: '工具正式发布：赛季 / 赛段浏览、数据获取筛选与 Excel 导出', bvid: 'BV1a8uA6XEeT' },
 ]
