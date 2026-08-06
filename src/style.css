@@ -907,6 +907,23 @@ button.primary.small {
   font-size: 0.8rem;
 }
 
+.bp-threshold-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.bp-threshold-input input {
+  width: 64px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
 .bp-turn-indicator {
   padding: 10px 14px;
   border-radius: 8px;

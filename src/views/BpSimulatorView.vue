@@ -20,11 +20,13 @@ onMounted(async () => {
 interface HeroStat {
   lanes: Set<string>
   bpRateByLane: Map<string, number>
+  winRateByLane: Map<string, number>
   maxBpRate: number
+  maxWinRate: number
 }
 
-// 从「获取全部数据」拉到的英雄数据里读 英雄分路 / BP率，做分组和排序用；
-// 同一个英雄可能按分路拆成多行（不同分路 BP率不同），所以按英雄名聚合
+// 从「获取全部数据」拉到的英雄数据里读 英雄分路 / BP率 / 胜率，做分组和排序用；
+// 同一个英雄可能按分路拆成多行（不同分路 BP率/胜率不同），所以按英雄名聚合
 const heroStatsByName = computed(() => {
   const map = new Map<string, HeroStat>()
   const rows = fetchedData.value?.heroRows ?? []
@@ -33,16 +35,19 @@ const heroStatsByName = computed(() => {
     if (!name) continue
     const lane = String(row['英雄分路'] ?? '').trim()
     const bpRate = parseFloat(String(row['BP率'] ?? '').replace('%', '')) || 0
+    const winRate = parseFloat(String(row['胜率'] ?? '').replace('%', '')) || 0
     let stat = map.get(name)
     if (!stat) {
-      stat = { lanes: new Set(), bpRateByLane: new Map(), maxBpRate: 0 }
+      stat = { lanes: new Set(), bpRateByLane: new Map(), winRateByLane: new Map(), maxBpRate: 0, maxWinRate: 0 }
       map.set(name, stat)
     }
     if (lane) {
       stat.lanes.add(lane)
       stat.bpRateByLane.set(lane, bpRate)
+      stat.winRateByLane.set(lane, winRate)
     }
     if (bpRate > stat.maxBpRate) stat.maxBpRate = bpRate
+    if (winRate > stat.maxWinRate) stat.maxWinRate = winRate
   }
   return map
 })
@@ -57,6 +62,8 @@ const availableLanes = computed(() => {
 
 const activeLane = ref<string | null>(null)
 const poolVisibility = ref<'all' | 'selectable'>('all')
+const sortMode = ref<'bpRate' | 'winRate'>('bpRate')
+const winRateBpThreshold = ref(0)
 
 function bpRateFor(c: Champion): number {
   const stat = heroStatsByName.value.get(c.name)
@@ -65,9 +72,17 @@ function bpRateFor(c: Champion): number {
   return stat.maxBpRate
 }
 
-function bpRateLabel(c: Champion): string {
-  const rate = bpRateFor(c)
-  return rate >= 0 ? `${rate.toFixed(2)}%` : ''
+function winRateFor(c: Champion): number {
+  const stat = heroStatsByName.value.get(c.name)
+  if (!stat) return -1
+  if (activeLane.value) return stat.winRateByLane.get(activeLane.value) ?? -1
+  return stat.maxWinRate
+}
+
+function activeRateLabel(c: Champion): string {
+  const rate = sortMode.value === 'winRate' ? winRateFor(c) : bpRateFor(c)
+  if (rate < 0) return ''
+  return `${sortMode.value === 'winRate' ? '胜率' : 'BP'} ${rate.toFixed(2)}%`
 }
 
 type Side = 'blue' | 'red'
@@ -196,7 +211,20 @@ const filteredChampions = computed(() => {
   if (poolVisibility.value === 'selectable') {
     list = list.filter((c) => isSelectable(c))
   }
-  return [...list].sort((a, b) => bpRateFor(b) - bpRateFor(a))
+
+  if (sortMode.value === 'bpRate') {
+    return [...list].sort((a, b) => bpRateFor(b) - bpRateFor(a))
+  }
+
+  // 按胜率排序：只有 BP率 达到门槛的英雄参与胜率排序并排在前面；没达到门槛的仍然显示，
+  // 只是不参与排序，统一排在后面（按 BP率 做个稳定的次要排序，而不是随机顺序）
+  return [...list].sort((a, b) => {
+    const aQualifies = bpRateFor(a) >= winRateBpThreshold.value
+    const bQualifies = bpRateFor(b) >= winRateBpThreshold.value
+    if (aQualifies && bQualifies) return winRateFor(b) - winRateFor(a)
+    if (aQualifies !== bQualifies) return aQualifies ? -1 : 1
+    return bpRateFor(b) - bpRateFor(a)
+  })
 })
 
 function selectChampion(c: Champion) {
@@ -390,6 +418,21 @@ function endSeriesEarly() {
           </label>
         </div>
       </div>
+      <div class="bp-picker-toolbar">
+        <div class="bp-visibility-toggle">
+          <label class="radio-option">
+            <input v-model="sortMode" type="radio" value="bpRate" />
+            按 BP率 排序
+          </label>
+          <label class="radio-option">
+            <input v-model="sortMode" type="radio" value="winRate" />
+            按胜率排序
+          </label>
+        </div>
+        <label v-if="sortMode === 'winRate'" class="bp-threshold-input">
+          BP率 ≥ <input v-model.number="winRateBpThreshold" type="number" min="0" max="100" step="0.1" /> % 才参与排序
+        </label>
+      </div>
       <input v-model="search" type="text" placeholder="搜索英雄（中文名 / 英文名 / 拼音）..." class="bp-search" />
       <div class="bp-champion-grid">
         <button
@@ -404,7 +447,7 @@ function endSeriesEarly() {
           <img v-if="championIconUrl(c.icon)" :src="championIconUrl(c.icon)!" :alt="c.name" />
           <span v-else class="bp-champion-noicon">{{ c.name }}</span>
           <span class="bp-champion-name">{{ c.name }}</span>
-          <span v-if="bpRateLabel(c)" class="bp-champion-rate">{{ bpRateLabel(c) }}</span>
+          <span v-if="activeRateLabel(c)" class="bp-champion-rate">{{ activeRateLabel(c) }}</span>
         </button>
       </div>
     </div>
