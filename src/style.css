@@ -869,6 +869,60 @@ button.primary.small {
   color: var(--accent);
 }
 
+.bp-champion.tag-edit {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.bp-champion-override-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: var(--accent);
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+.bp-champion {
+  position: relative;
+}
+
+.bp-tag-popover {
+  position: fixed;
+  z-index: 50;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  padding: 10px 12px;
+  min-width: 160px;
+}
+
+.bp-tag-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+
+.bp-tag-popover-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.bp-tag-lane-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
 .bp-toolbar {
   display: flex;
   align-items: center;

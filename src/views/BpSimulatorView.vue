@@ -1,10 +1,82 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ALL_CHAMPIONS, championIconUrl, type Champion } from '../heroPool'
 import { defaultFormState, fetchAllData, fetching } from '../dataFetch'
 import { fetchedData } from '../dataStore'
 
 const LANE_ORDER = ['上单', '打野', '中单', '射手', '辅助']
+
+// ---- 用户自定义分路标签，接口给的「英雄分路」有时候是错的或者不全，允许手动纠正/补充，存本地 ----
+const LANE_OVERRIDES_KEY = 'loldata_bp_lane_overrides_v1'
+
+function loadLaneOverrides(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(LANE_OVERRIDES_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed !== null ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+const laneOverrides = ref<Record<string, string[]>>(loadLaneOverrides())
+
+function saveLaneOverrides() {
+  try {
+    localStorage.setItem(LANE_OVERRIDES_KEY, JSON.stringify(laneOverrides.value))
+  } catch {
+    // localStorage 不可用或已满时忽略
+  }
+}
+
+const tagEditMode = ref(false)
+const editingChampion = ref<Champion | null>(null)
+const tagPopoverStyle = ref({ top: '0px', left: '0px' })
+
+function effectiveLanes(c: Champion): Set<string> {
+  const override = laneOverrides.value[c.id]
+  if (override) return new Set(override)
+  return heroStatsByName.value.get(c.name)?.lanes ?? new Set()
+}
+
+function hasLaneOverride(c: Champion): boolean {
+  return !!laneOverrides.value[c.id]
+}
+
+function openTagEditor(c: Champion, event: MouseEvent) {
+  editingChampion.value = c
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  tagPopoverStyle.value = { top: `${rect.bottom + 4}px`, left: `${rect.left}px` }
+}
+
+function closeTagEditor() {
+  editingChampion.value = null
+}
+
+function toggleLaneTag(c: Champion, lane: string) {
+  const current = new Set(effectiveLanes(c))
+  if (current.has(lane)) current.delete(lane)
+  else current.add(lane)
+  laneOverrides.value = { ...laneOverrides.value, [c.id]: [...current] }
+  saveLaneOverrides()
+}
+
+function resetLaneTag(c: Champion) {
+  const next = { ...laneOverrides.value }
+  delete next[c.id]
+  laneOverrides.value = next
+  saveLaneOverrides()
+}
+
+function handleDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.bp-tag-popover') && !target.closest('.bp-champion')) {
+    editingChampion.value = null
+  }
+}
+onMounted(() => document.addEventListener('click', handleDocumentClick))
+onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 
 const loadError = ref('')
 
@@ -54,8 +126,8 @@ const heroStatsByName = computed(() => {
 
 const availableLanes = computed(() => {
   const set = new Set<string>()
-  for (const stat of heroStatsByName.value.values()) {
-    for (const lane of stat.lanes) set.add(lane)
+  for (const c of ALL_CHAMPIONS) {
+    for (const lane of effectiveLanes(c)) set.add(lane)
   }
   return LANE_ORDER.filter((l) => set.has(l))
 })
@@ -206,7 +278,7 @@ const filteredChampions = computed(() => {
       c.keywords.some((k) => k.toLowerCase().includes(q)),
   )
   if (activeLane.value) {
-    list = list.filter((c) => heroStatsByName.value.get(c.name)?.lanes.has(activeLane.value!))
+    list = list.filter((c) => effectiveLanes(c).has(activeLane.value!))
   }
   if (poolVisibility.value === 'selectable') {
     list = list.filter((c) => isSelectable(c))
@@ -230,6 +302,14 @@ const filteredChampions = computed(() => {
 function selectChampion(c: Champion) {
   if (isGameComplete.value || !isSelectable(c)) return
   currentGame.value.steps[currentStepIndex.value] = c
+}
+
+function onChampionClick(c: Champion, event: MouseEvent) {
+  if (tagEditMode.value) {
+    openTagEditor(c, event)
+    return
+  }
+  selectChampion(c)
 }
 
 const canUndo = computed(() => currentGame.value.steps.some((s) => s !== null))
@@ -417,6 +497,10 @@ function endSeriesEarly() {
             只显示可选
           </label>
         </div>
+        <label class="radio-option" title="接口给的分路数据有时候不对或者不全，开启后点英雄图标可以自己改分路标签">
+          <input v-model="tagEditMode" type="checkbox" />
+          🏷️ 编辑分路标签
+        </label>
       </div>
       <div class="bp-picker-toolbar">
         <div class="bp-visibility-toggle">
@@ -433,6 +517,7 @@ function endSeriesEarly() {
           BP率 ≥ <input v-model.number="winRateBpThreshold" type="number" min="0" max="100" step="0.1" /> % 才参与排序
         </label>
       </div>
+      <p v-if="tagEditMode" class="hint">编辑模式下点英雄图标可以修改它的分路标签，不会触发 Ban / Pick。</p>
       <input v-model="search" type="text" placeholder="搜索英雄（中文名 / 英文名 / 拼音）..." class="bp-search" />
       <div class="bp-champion-grid">
         <button
@@ -440,16 +525,43 @@ function endSeriesEarly() {
           :key="c.id"
           type="button"
           class="bp-champion"
-          :disabled="!isSelectable(c)"
-          :title="isSelectable(c) ? c.name : unselectableReason(c)"
-          @click="selectChampion(c)"
+          :class="{ 'tag-edit': tagEditMode }"
+          :disabled="!tagEditMode && !isSelectable(c)"
+          :title="tagEditMode ? '点击编辑分路标签' : isSelectable(c) ? c.name : unselectableReason(c)"
+          @click="onChampionClick(c, $event)"
         >
           <img v-if="championIconUrl(c.icon)" :src="championIconUrl(c.icon)!" :alt="c.name" />
           <span v-else class="bp-champion-noicon">{{ c.name }}</span>
+          <span v-if="hasLaneOverride(c)" class="bp-champion-override-dot" title="已手动调整分路">●</span>
           <span class="bp-champion-name">{{ c.name }}</span>
           <span v-if="activeRateLabel(c)" class="bp-champion-rate">{{ activeRateLabel(c) }}</span>
         </button>
       </div>
+    </div>
+
+    <div v-if="editingChampion" class="bp-tag-popover" :style="tagPopoverStyle">
+      <div class="bp-tag-popover-header">
+        {{ editingChampion.name }} 的分路标签
+        <button type="button" class="link-btn" @click="closeTagEditor">关闭</button>
+      </div>
+      <div class="bp-tag-popover-lanes">
+        <label v-for="lane in LANE_ORDER" :key="lane" class="bp-tag-lane-item">
+          <input
+            type="checkbox"
+            :checked="effectiveLanes(editingChampion).has(lane)"
+            @change="toggleLaneTag(editingChampion, lane)"
+          />
+          {{ lane }}
+        </label>
+      </div>
+      <button
+        v-if="hasLaneOverride(editingChampion)"
+        type="button"
+        class="link-btn"
+        @click="resetLaneTag(editingChampion)"
+      >
+        恢复成接口数据
+      </button>
     </div>
   </div>
 </template>
