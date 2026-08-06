@@ -53,8 +53,11 @@ onMounted(async () => {
     }
     navigateSupported.value = await window.toy.isSupport('navigate')
 
-    if (await window.toy.isSupport('getAuthorVideos')) {
+    const videosSupported = await window.toy.isSupport('getAuthorVideos')
+    console.log('[ToySDK] isSupport(getAuthorVideos):', videosSupported)
+    if (videosSupported) {
       const videosResult = await window.toy.getAuthorVideos({ videos: RECENT_BVIDS.map((bvid) => ({ bvid })) })
+      console.log('[ToySDK] getAuthorVideos result:', JSON.stringify(videosResult))
       if (videosResult.status === 'ok' && Array.isArray(videosResult.data)) {
         const byBvid = new Map(videosResult.data.filter((v) => v.bvid).map((v) => [v.bvid as string, v]))
         recentVideos.value = RECENT_BVIDS.map((bvid) => {
@@ -65,6 +68,8 @@ onMounted(async () => {
             cover: info?.cover ?? info?.pic ?? null,
           }
         })
+      } else {
+        console.warn('[ToySDK] getAuthorVideos returned unexpected shape, keeping fallback', videosResult)
       }
     }
   } catch (err) {
