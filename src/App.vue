@@ -3,17 +3,30 @@ import { onMounted, ref } from 'vue'
 import GetAllDataView from './views/GetAllDataView.vue'
 import GetNewAllDataView from './views/GetNewAllDataView.vue'
 import TeamAffinityView from './views/TeamAffinityView.vue'
+import BpSimulatorView from './views/BpSimulatorView.vue'
 
 const tabs = [
   { key: 'all', label: '获取全部数据', component: GetAllDataView },
   { key: 'diff', label: '版本数据对比', component: GetNewAllDataView },
   { key: 'affinity', label: '队伍英雄亲合度', component: TeamAffinityView },
+  { key: 'bp', label: '全局BP模拟器', component: BpSimulatorView },
 ] as const
 
 const active = ref<(typeof tabs)[number]['key']>('all')
 
 const AUTHOR_MID = '523253490'
 const PROMO_BVID = 'BV1a8uA6XEeT'
+
+interface ChangelogEntry {
+  date: string
+  title: string
+  bvid?: string
+}
+
+// TODO: 补充完整的更新记录（日期 + 功能说明 + 对应讲解视频 BV 号，没有视频的条目可省略 bvid）
+const CHANGELOG: ChangelogEntry[] = [
+  { date: '2026-08-04', title: '工具正式发布：赛季 / 赛段浏览、数据获取筛选与 Excel 导出', bvid: 'BV1a8uA6XEeT' },
+]
 
 const authorProfile = ref<ToyAuthorProfile | null>(null)
 const navigateSupported = ref(false)
@@ -34,15 +47,19 @@ onMounted(async () => {
   }
 })
 
-function openVideo() {
+function openVideoBv(bvid: string) {
   if (navigateSupported.value && window.toy) {
-    window.toy.navigate({ type: 'video', id: PROMO_BVID }).catch((err: unknown) => {
+    window.toy.navigate({ type: 'video', id: bvid }).catch((err: unknown) => {
       console.error('[ToySDK] navigate(video) failed', err)
-      window.open(`https://www.bilibili.com/video/${PROMO_BVID}`, '_blank')
+      window.open(`https://www.bilibili.com/video/${bvid}`, '_blank')
     })
     return
   }
-  window.open(`https://www.bilibili.com/video/${PROMO_BVID}`, '_blank')
+  window.open(`https://www.bilibili.com/video/${bvid}`, '_blank')
+}
+
+function openVideo() {
+  openVideoBv(PROMO_BVID)
 }
 
 function openAuthorSpace() {
@@ -74,6 +91,17 @@ function openAuthorSpace() {
       ➕ 关注 UP 主
     </button>
   </div>
+
+  <details class="advanced-fields changelog" open>
+    <summary>更新列表</summary>
+    <ul class="changelog-list">
+      <li v-for="item in CHANGELOG" :key="item.date + item.title" class="changelog-item">
+        <span class="changelog-date">{{ item.date }}</span>
+        <span class="changelog-title">{{ item.title }}</span>
+        <button v-if="item.bvid" type="button" class="link-btn" @click="openVideoBv(item.bvid)">观看讲解视频</button>
+      </li>
+    </ul>
+  </details>
 
   <div class="tabs">
     <button
