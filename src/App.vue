@@ -17,7 +17,7 @@ const active = ref<(typeof tabs)[number]['key']>('all')
 const AUTHOR_MID = '523253490'
 
 // TODO: 发了新视频想换的话，把 BV 号换掉重新发布即可（平台没有"自动拉取最新视频"的接口，只能手动指定）
-const RECENT_BVIDS = ['BV184uH6qEXP', 'BV1tTM26YESk', 'BV1MmM26KECU', 'BV1tzuA61EJY', 'BV1B83d6JEQ4']
+const RECENT_BVIDS = ['BV1F3uW6xEnH', 'BV184uH6qEXP', 'BV1tTM26YESk', 'BV1MmM26KECU', 'BV1tzuA61EJY', 'BV1B83d6JEQ4']
 
 interface RecentVideo {
   bvid: string
