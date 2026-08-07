@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { fetchSeasonList, fetchStageList, type StageInfo } from '../api'
 import { exportToExcel, type ExportColumnOverrides } from '../excelExporter'
 import { downloadWorkbook } from '../utils/excel'
+import { settleWithConcurrency } from '../utils/concurrency'
 import { fetchAllData, fetching, loadFormState, saveFormState, tryUseCachedData, type FormState } from '../dataFetch'
 import { DEFAULT_API_KEY, DEFAULT_SEASON_ID, DEFAULT_STAGE_IDS } from '../config'
 import type { Row } from '../types'
@@ -100,7 +101,8 @@ async function loadSeasonTree(force = false) {
     const dictList = await fetchSeasonList(key).catch(() => [])
     for (const s of dictList) candidateIds.add(s.seasonId)
 
-    const results = await Promise.allSettled(Array.from(candidateIds).map((id) => fetchStageList(id, key)))
+    // 分批探测而不是一次性并发几十个请求——承载代理的服务器配置很小，扛不住这种突发流量
+    const results = await settleWithConcurrency(Array.from(candidateIds), 6, (id) => fetchStageList(id, key))
     const nodes: SeasonNode[] = []
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value.stageInfos.length > 0) {

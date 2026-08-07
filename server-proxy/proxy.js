@@ -81,6 +81,13 @@ setInterval(() => {
   }
 }, 5 * 60_000).unref()
 
+// Global cap on concurrent upstream requests — this box has ~400MB RAM, so a burst of
+// simultaneous visitors (each firing dozens of requests on load) can pile up enough open
+// HTTPS connections to exhaust memory. Reject new work past this ceiling instead of letting
+// it queue unbounded; the client-side callers already retry/are resilient to a single failure.
+const MAX_CONCURRENT_UPSTREAM = 24
+let inFlight = 0
+
 function setCors(res, origin) {
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Vary', 'Origin')
@@ -128,7 +135,21 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  if (inFlight >= MAX_CONCURRENT_UPSTREAM) {
+    console.warn(`[reject:overloaded] ip=${ip} path=${req.url} inFlight=${inFlight}`)
+    res.writeHead(503)
+    res.end('Server busy, please retry')
+    return
+  }
+
   console.log(`[proxy] ip=${ip} path=${req.url}`)
+  inFlight += 1
+  let finished = false
+  function done() {
+    if (finished) return
+    finished = true
+    inFlight -= 1
+  }
 
   const upstreamReq = https.request(
     {
@@ -143,6 +164,8 @@ const server = http.createServer((req, res) => {
         'Content-Type': upstreamRes.headers['content-type'] || 'application/json',
       })
       upstreamRes.pipe(res)
+      upstreamRes.on('end', done)
+      upstreamRes.on('error', done)
     },
   )
 
@@ -153,6 +176,7 @@ const server = http.createServer((req, res) => {
   upstreamReq.on('error', (err) => {
     if (!res.headersSent) res.writeHead(502)
     res.end('Proxy error: ' + String(err))
+    done()
   })
 
   upstreamReq.end()
