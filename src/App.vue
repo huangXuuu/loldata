@@ -110,6 +110,7 @@ function openAuthorSpace() {
 <template>
   <h1>【B站心语悦无言】LPL赛事数据工具</h1>
   <p class="subtitle">目前是小 UP 为爱发电阶段，租的小服务器经常顶不住大家访问，如果遇到报错，麻烦私信联系 UP</p>
+  <p class="subtitle">扛不住大家一直私信反应网络问题了，升级到了大服务器，希望能有好转 QAQ</p>
 
   <div class="promo-bar">
     <button type="button" class="link-btn promo-follow" @click="openAuthorSpace">
